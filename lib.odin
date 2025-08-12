@@ -38,13 +38,7 @@ polls:  [dynamic]linux.Poll_Fd
 
 @(export, link_prefix="coroutine_")
 init :: proc "c" () {
-    context = runtime.default_context()
-
-    if len(contexts) != 0 {
-        return // already initialized
-    }
-    append(&contexts, Context{})
-    append(&active, 0)
+    
 }
 
 //TODO(carlyle): ideally we shouldn't export this
@@ -125,6 +119,11 @@ switch_context :: proc() {
 @(export, link_prefix="coroutine_")
 go :: proc "c" (f: proc(rawptr), arg: rawptr) {
     context = runtime.default_context()
+
+    if len(contexts) == 0 {
+        append(&contexts, Context{})
+        append(&active, 0)
+    }
 
     id: int
     if len(dead) > 0 {
