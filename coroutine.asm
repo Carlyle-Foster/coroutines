@@ -11,12 +11,17 @@ section .text
 extern coroutine_switch_context
 extern __finish_current
 
+extern __yield
+extern __sleep_read
+extern __sleep_write
+
 global coroutine_yield
 global coroutine_sleep_read
 global coroutine_sleep_write
+
 global coroutine_restore_context
 global coroutine_finish_current
-    
+
 %macro save_registers 0
     push rdi
     push rbp
@@ -30,26 +35,18 @@ global coroutine_finish_current
 
 coroutine_yield:
     save_registers
-
-    mov rdi, rsp        ; rsp
-    mov rsi, 0          ; sm = SM_NONE
-    jmp [coroutine_switch_context wrt ..got]
+    mov rdi, rsp
+    jmp [__yield wrt ..got]
 
 coroutine_sleep_read:
     save_registers
-
-    mov rdx, rdi        ; fd
-    mov rdi, rsp        ; rsp
-    mov rsi, 1          ; sm = SM_READ
-    jmp [coroutine_switch_context wrt ..got]
+    mov rsi, rsp
+    jmp [__sleep_read wrt ..got]
 
 coroutine_sleep_write:
     save_registers
-
-    mov rdx, rdi     ; fd
-    mov rdi, rsp     ; rsp
-    mov rsi, 2       ; sm = SM_WRITE
-    jmp [coroutine_switch_context wrt ..got]
+    mov rsi, rsp
+    jmp [__sleep_write wrt ..got]
 
 coroutine_restore_context:
     mov rsp, rdi
@@ -65,5 +62,4 @@ coroutine_restore_context:
 
 coroutine_finish_current:
     push qword 0
-    mov rax, [__finish_current wrt ..got]
-    jmp rax
+    jmp [__finish_current wrt ..got]

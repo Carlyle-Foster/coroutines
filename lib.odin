@@ -7,20 +7,12 @@ import c "core:c/libc"
 
 import "core:sys/linux"
 
-@(export)
 foreign import assembly "coroutine.asm"
 @(link_prefix="coroutine_")
 foreign assembly {
-    yield :: proc() ---
-
-    sleep_read  :: proc(fd: linux.Poll_Fd) ---
-    sleep_write :: proc(fd: linux.Poll_Fd) ---
-
     restore_context :: proc(rsp: rawptr) ---
     finish_current  :: proc() ---
 }
-
-
 
 STACK_CAPACITY := uint( 1024 * os.get_page_size() )
 
@@ -30,26 +22,21 @@ Context :: struct {
 }
 
 // TODO: coroutines library probably does not work well in multithreaded environment
-current: int
-active: [dynamic]int
-dead: [dynamic]int
 contexts: [dynamic]Context
+current: int
+
+active: [dynamic]int
+dead:   [dynamic]int
 asleep: [dynamic]int
-polls: [dynamic]linux.Poll_Fd
+polls:  [dynamic]linux.Poll_Fd
 
 // TODO: ARM support
 //   Requires modifications in all the @arch places
 
-Sleep_Mode :: enum {
-    None = 0,
-    Read,
-    Write,
-}
-
 // Linux x86_64 call convention
 // %rdi, %rsi, %rdx, %rcx, %r8, and %r9
 
-@(export, link_name="coroutine_init")
+@(export, link_prefix="coroutine_")
 init :: proc "c" () {
     context = runtime.default_context()
 
@@ -60,52 +47,46 @@ init :: proc "c" () {
     append(&active, 0)
 }
 
-@(export, link_prefix="coroutine_")
-switch_context :: proc "c" (rsp: rawptr, sm: Sleep_Mode, fd: linux.Fd) {
+//TODO(carlyle): ideally we shouldn't export this
+@(export)
+__yield :: proc "c" (rsp: rawptr) {
     context = runtime.default_context()
 
     contexts[active[current]].rsp = rsp
 
-    switch sm {
-    case .None:
-        current += 1
-    case .Read:
-        append(&asleep, active[current])
-        unordered_remove(&active, current)
+    current += 1
 
-        append(&polls, linux.Poll_Fd{ fd=fd, events={ .RDNORM } })
-    case .Write:
-        append(&asleep, active[current])
-        unordered_remove(&active, current)
-
-        append(&polls, linux.Poll_Fd{ fd=fd, events={ .WRNORM } })
-    case: 
-        unreachable()
-    }
-
-    if len(polls) > 0 {
-        timeout: c.int =  -1 if (len(active) == 0) else 0
-        
-        _, poll_err := linux.poll(polls[:], timeout)
-        assert(poll_err == .NONE)
-
-        for i := 0; i < len(polls); {
-            if polls[i].revents > {} {
-                id := asleep[i]
-                unordered_remove(&polls, i)
-                unordered_remove(&asleep, i)
-                append(&active, id)
-            } else {
-                i += 1
-            }
-        }
-    }
-    assert(len(active) > 0)
-    current %= len(active)
-    restore_context(contexts[active[current]].rsp)
+    switch_context()
 }
 
-//TODO(carlyle): ideally we shouldn't export this
+@(export)
+__sleep_read :: proc "c" (fd: linux.Fd, rsp: rawptr) {
+    context = runtime.default_context()
+
+    contexts[active[current]].rsp = rsp
+
+    append(&asleep, active[current])
+    unordered_remove(&active, current)
+
+    append(&polls, linux.Poll_Fd{ fd=fd, events={ .RDNORM } })
+
+    switch_context()
+}
+
+@(export)
+__sleep_write :: proc "c" (fd: linux.Fd, rsp: rawptr) {
+    context = runtime.default_context()
+
+    contexts[active[current]].rsp = rsp
+
+    append(&asleep, active[current])
+    unordered_remove(&active, current)
+    
+    append(&polls, linux.Poll_Fd{ fd=fd, events={ .WRNORM } })
+
+    switch_context()
+}
+
 @(export)
 __finish_current :: proc "c" () {
     context = runtime.default_context()
@@ -115,6 +96,10 @@ __finish_current :: proc "c" () {
     append(&dead, active[current])
     unordered_remove(&active, current)
 
+    switch_context()
+}
+
+switch_context :: proc() {
     if len(polls) > 0 {
         timeout: c.int =  -1 if (len(active) == 0) else 0
 
@@ -132,7 +117,7 @@ __finish_current :: proc "c" () {
             }
         }
     }
-    assert(len(active) > 0)
+    assert(len(active) > 0, "deadlock")
     current %= len(active)
     restore_context(contexts[active[current]].rsp)
 }
