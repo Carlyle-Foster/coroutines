@@ -1,3 +1,5 @@
+; this file uses a NASM/intel dialect
+
 bits 64
 
 default rel
@@ -15,7 +17,7 @@ global coroutine_sleep_write
 global coroutine_restore_context
 global coroutine_finish_current
     
-coroutine_yield:
+%macro save_registers 0
     push rdi
     push rbp
     push rbx
@@ -24,43 +26,30 @@ coroutine_yield:
     push r14
     push r15
     push qword 0  ; coroutine_switch_context assumes the stack is 8 bytes off from being 16 byte aligned at the start
+%endmacro
+
+coroutine_yield:
+    save_registers
 
     mov rdi, rsp        ; rsp
     mov rsi, 0          ; sm = SM_NONE
-    mov rax, [rel coroutine_switch_context wrt ..got]
-    jmp rax
+    jmp [coroutine_switch_context wrt ..got]
 
 coroutine_sleep_read:
-    push rdi
-    push rbp
-    push rbx
-    push r12
-    push r13
-    push r14
-    push r15
-    push qword 0
+    save_registers
 
     mov rdx, rdi        ; fd
     mov rdi, rsp        ; rsp
     mov rsi, 1          ; sm = SM_READ
-    mov rax, [rel coroutine_switch_context wrt ..got]
-    jmp rax
+    jmp [coroutine_switch_context wrt ..got]
 
 coroutine_sleep_write:
-    push rdi
-    push rbp
-    push rbx
-    push r12
-    push r13
-    push r14
-    push r15
-    push qword 0
+    save_registers
 
     mov rdx, rdi     ; fd
     mov rdi, rsp     ; rsp
     mov rsi, 2       ; sm = SM_WRITE
-    mov rax, [rel coroutine_switch_context wrt ..got]
-    jmp rax
+    jmp [coroutine_switch_context wrt ..got]
 
 coroutine_restore_context:
     mov rsp, rdi
@@ -76,5 +65,5 @@ coroutine_restore_context:
 
 coroutine_finish_current:
     push qword 0
-    mov rax, [rel __finish_current wrt ..got]
+    mov rax, [__finish_current wrt ..got]
     jmp rax
