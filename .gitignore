@@ -1,1 +1,3 @@
 build/
+.vscode/
+ols.json

@@ -153,6 +153,14 @@ void __attribute__((naked)) coroutine_restore_context(void *rsp)
     "    ret\n");
 }
 
+void __attribute__((naked)) coroutine_finish_current(void)
+{
+    // @arch
+    asm(
+    "    pushq $0\n" // for alignment in accordance with the system V ABI
+    "    jmp __finish_current\n");
+}
+
 void coroutine_switch_context(void *rsp, Sleep_Mode sm, int fd)
 {
     contexts.items[active.items[current]].rsp = rsp;
@@ -206,7 +214,7 @@ void coroutine_init(void)
     da_append(&active, 0);
 }
 
-void coroutine__finish_current(void)
+void __finish_current(void)
 {
     if (active.items[current] == 0) {
         UNREACHABLE("Main Coroutine with id == 0 should never reach this place");
@@ -251,7 +259,7 @@ void coroutine_go(void (*f)(void*), void *arg)
 
     void **rsp = (void**)((char*)contexts.items[id].stack_base + STACK_CAPACITY);
     // @arch
-    *(--rsp) = coroutine__finish_current;
+    *(--rsp) = coroutine_finish_current;
     *(--rsp) = f;
     *(--rsp) = arg; // push rdi
     *(--rsp) = 0;   // push rbx
