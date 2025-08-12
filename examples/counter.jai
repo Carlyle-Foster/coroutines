@@ -22,7 +22,6 @@ counter :: (arg: *void) #c_call {
 }
 
 main :: () {
-    coroutine_init();
     coroutine_go((arg: *void) #c_call {
         push_context {
             print("[%] Hello from Jai Lambda\n", coroutine_id());

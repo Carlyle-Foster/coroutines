@@ -8,8 +8,6 @@ bool quit = false;
 usz server_id = 0;
 
 fn void main() {
-    coroutine::init();
-
     server_id = coroutine::id();
 
     const String HOST = "localhost";

@@ -1,5 +1,4 @@
-#ifndef COROUTINE_H_
-#define COROUTINE_H_
+#pragma once
 
 // # What is a Coroutine?
 //
@@ -28,14 +27,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
-
-// TODO: consider making coroutine.h an stb-style single header library
-
-// Initialize the coroutine runtime. Must be called before using any other
-// functions of this API. After the initialization the currently running code is
-// considered the main coroutine with the id = 0. Should not be called twice.
-// TODO: Allow calling it twice, 'cause why not?!
-void coroutine_init(void);
 
 // Switch to the next coroutine. The execution will continue starting from
 // coroutine_yield() (or any other flavor of it like coroutine_sleep_read() or
@@ -81,5 +72,3 @@ void coroutine_wake_up(size_t id);
 #ifdef __cplusplus
 }
 #endif // __cplusplus
-
-#endif // COROUTINE_H_

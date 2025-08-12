@@ -12,7 +12,6 @@ fn void counter(void* arg) {
 }
 
 fn void main() {
-    coroutine::init();
     coroutine::go(fn void(void *arg) {
         io::printfn("[%d] Hello from C3 Lambda", coroutine::id());
     });

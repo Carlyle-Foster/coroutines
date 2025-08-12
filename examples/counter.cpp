@@ -13,7 +13,6 @@ void counter(void *arg)
 
 int main()
 {
-    coroutine_init();
     coroutine_go([](void*) {
         std::cout << "[" << coroutine_id() << "] Hello from C++ Lambda" << std::endl;
     }, nullptr);

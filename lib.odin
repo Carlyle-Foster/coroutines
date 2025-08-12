@@ -14,7 +14,7 @@ foreign assembly {
     finish_current  :: proc() ---
 }
 
-STACK_CAPACITY := uint( 1024 * os.get_page_size() )
+STACK_CAPACITY: uint = 1024 * 64
 
 Context :: struct {
     rsp: rawptr,
@@ -36,15 +36,18 @@ polls:  [dynamic]linux.Poll_Fd
 // Linux x86_64 call convention
 // %rdi, %rsi, %rdx, %rcx, %r8, and %r9
 
-@(export, link_prefix="coroutine_")
-init :: proc "c" () {
-    
+ensure_init :: #force_inline proc() {
+    if len(contexts) == 0 {
+        append(&contexts, Context{})
+        append(&active, 0)
+    }
 }
 
 //TODO(carlyle): ideally we shouldn't export this
 @(export)
 __yield :: proc "c" (rsp: rawptr) {
     context = runtime.default_context()
+    ensure_init()
 
     contexts[active[current]].rsp = rsp
 
@@ -56,6 +59,7 @@ __yield :: proc "c" (rsp: rawptr) {
 @(export)
 __sleep_read :: proc "c" (fd: linux.Fd, rsp: rawptr) {
     context = runtime.default_context()
+    ensure_init()
 
     contexts[active[current]].rsp = rsp
 
@@ -70,6 +74,7 @@ __sleep_read :: proc "c" (fd: linux.Fd, rsp: rawptr) {
 @(export)
 __sleep_write :: proc "c" (fd: linux.Fd, rsp: rawptr) {
     context = runtime.default_context()
+    ensure_init()
 
     contexts[active[current]].rsp = rsp
 
@@ -119,11 +124,7 @@ switch_context :: proc() {
 @(export, link_prefix="coroutine_")
 go :: proc "c" (f: proc(rawptr), arg: rawptr) {
     context = runtime.default_context()
-
-    if len(contexts) == 0 {
-        append(&contexts, Context{})
-        append(&active, 0)
-    }
+    ensure_init()
 
     id: int
     if len(dead) > 0 {
@@ -172,7 +173,7 @@ wake_up :: proc "c" (id: int) {
 
 @(export, link_prefix="coroutine_")
 id :: proc "c" () -> int {
-    return active[current]
+    return active[current] if len(active) > 0 else 0
 }
 
 @(export, link_prefix="coroutine_")

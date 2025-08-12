@@ -8,7 +8,6 @@ section .note.GNU-stack
 
 section .text
 
-extern coroutine_switch_context
 extern __finish_current
 
 extern __yield
@@ -30,7 +29,7 @@ global coroutine_finish_current
     push r13
     push r14
     push r15
-    push qword 0  ; coroutine_switch_context assumes the stack is 8 bytes off from being 16 byte aligned at the start
+    push qword 0  ; for alignment
 %endmacro
 
 coroutine_yield:
@@ -50,7 +49,7 @@ coroutine_sleep_write:
 
 coroutine_restore_context:
     mov rsp, rdi
-    pop r15     ; for alignment only
+    pop r15     ; for alignment
     pop r15
     pop r14
     pop r13
@@ -58,7 +57,7 @@ coroutine_restore_context:
     pop rbx
     pop rbp
     pop rdi
-    ret     ; this should always go to finish_current
+    ret
 
 coroutine_finish_current:
     push qword 0

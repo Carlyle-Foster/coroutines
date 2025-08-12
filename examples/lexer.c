@@ -62,7 +62,6 @@ int main(int argc, char* argv[]){
         return 1;
     }
 
-    coroutine_init();
     coroutine_go(lex, argv[1]);
 
     // Consume those tokens
