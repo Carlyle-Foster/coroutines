@@ -1,17 +1,19 @@
 package coroutines
 
-import "base:runtime"
-
-import "core:os"
 import c "core:c/libc"
 
 import "core:sys/linux"
 
 foreign import assembly "coroutine.asm"
-@(link_prefix="coroutine_")
+@(link_prefix="coroutine_", default_calling_convention="odin")
 foreign assembly {
+    yield       :: proc() ---
+    sleep_read  :: proc(fd: linux.Fd) ---
+    sleep_write :: proc(fd: linux.Fd) ---
+
+    // TODO(carlyle): this shouldn't require an explicit calling convention, no?
+    setup_context   :: proc(rsp: rawptr, f: proc"odin"(arg: rawptr), arg: rawptr) -> rawptr ---
     restore_context :: proc(rsp: rawptr) ---
-    finish_current  :: proc() ---
 }
 
 STACK_CAPACITY: uint = 1024 * 64
@@ -43,10 +45,8 @@ ensure_init :: #force_inline proc() {
     }
 }
 
-//TODO(carlyle): ideally we shouldn't export this
 @(export)
-__yield :: proc "c" (rsp: rawptr) {
-    context = runtime.default_context()
+__yield :: proc(rsp: rawptr) {
     ensure_init()
 
     contexts[active[current]].rsp = rsp
@@ -57,8 +57,7 @@ __yield :: proc "c" (rsp: rawptr) {
 }
 
 @(export)
-__sleep_read :: proc "c" (fd: linux.Fd, rsp: rawptr) {
-    context = runtime.default_context()
+__sleep_read :: proc(fd: linux.Fd, rsp: rawptr) {
     ensure_init()
 
     contexts[active[current]].rsp = rsp
@@ -72,8 +71,7 @@ __sleep_read :: proc "c" (fd: linux.Fd, rsp: rawptr) {
 }
 
 @(export)
-__sleep_write :: proc "c" (fd: linux.Fd, rsp: rawptr) {
-    context = runtime.default_context()
+__sleep_write :: proc(fd: linux.Fd, rsp: rawptr) {
     ensure_init()
 
     contexts[active[current]].rsp = rsp
@@ -87,10 +85,8 @@ __sleep_write :: proc "c" (fd: linux.Fd, rsp: rawptr) {
 }
 
 @(export)
-__finish_current :: proc "c" () {
-    context = runtime.default_context()
-
-    assert(active[current] != 0)
+__finish_current :: proc() {
+    assert(id() != 0)
 
     append(&dead, active[current])
     unordered_remove(&active, current)
@@ -118,12 +114,11 @@ switch_context :: proc() {
     }
     assert(len(active) > 0, "deadlock")
     current %= len(active)
+
     restore_context(contexts[active[current]].rsp)
 }
 
-@(export, link_prefix="coroutine_")
-go :: proc "c" (f: proc(rawptr), arg: rawptr) {
-    context = runtime.default_context()
+go :: proc(f: proc(rawptr), arg: rawptr) {
     ensure_init()
 
     id: int
@@ -138,28 +133,14 @@ go :: proc "c" (f: proc(rawptr), arg: rawptr) {
         assert(mmap_err == .NONE)
     }
 
-    rsp := ([^]rawptr)(contexts[id].stack_base)[STACK_CAPACITY/size_of(rawptr) - 10 : ]
-    // @arch
-    rsp[9] = rawptr(finish_current)
-    rsp[8] = rawptr(f)
-    rsp[7] = arg    // push rdi
-    rsp[6] = nil    // push rbx
-    rsp[5] = nil    // push rbp
-    rsp[4] = nil    // push r12
-    rsp[3] = nil    // push r13
-    rsp[2] = nil    // push r14
-    rsp[1] = nil    // push r15
-    rsp[0] = nil    // for alignment
+    rsp := ([^]rawptr)(contexts[id].stack_base)[STACK_CAPACITY/size_of(rawptr): ]
 
-    contexts[id].rsp = rsp
+    contexts[id].rsp = setup_context(rsp, f, arg)
 
     append(&active, id)
 }
 
-@(export, link_prefix="coroutine_")
-wake_up :: proc "c" (id: int) {
-    context = runtime.default_context()
-
+wake_up :: proc(id: int) {
     // @speed coroutine_wake_up is linear
     for sleeper in asleep {
         if sleeper == id {
@@ -171,12 +152,10 @@ wake_up :: proc "c" (id: int) {
     }
 }
 
-@(export, link_prefix="coroutine_")
-id :: proc "c" () -> int {
+id :: proc() -> int {
     return active[current] if len(active) > 0 else 0
 }
 
-@(export, link_prefix="coroutine_")
-alive :: proc "c" () -> int {
+alive :: proc() -> int {
     return len(active)
 }
