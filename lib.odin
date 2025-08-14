@@ -1,5 +1,7 @@
 package coroutines
 
+import "core:fmt"
+
 import c "core:c/libc"
 
 import "core:sys/linux"
@@ -12,7 +14,8 @@ foreign assembly {
     sleep_write :: proc(fd: linux.Fd) ---
 
     // TODO(carlyle): this shouldn't require an explicit calling convention, no?
-    setup_context   :: proc(rsp: rawptr, f: proc"odin"(arg: rawptr), arg: rawptr) -> rawptr ---
+    go              :: proc(f: proc"odin"(rawptr), arg: rawptr) ---
+    start           :: proc(f: proc"odin"(arg: rawptr), arg: rawptr, rsp: rawptr) ---
     restore_context :: proc(rsp: rawptr) ---
 }
 
@@ -21,27 +24,32 @@ STACK_CAPACITY: uint = 1024 * 64
 Context :: struct {
     rsp: rawptr,
     stack_base: rawptr,
+    active_id: Maybe(Active_Index),
 }
 
 // TODO: coroutines library probably does not work well in multithreaded environment
 contexts: [dynamic]Context
+dead:   [dynamic]int
 current: int
 
 active: [dynamic]int
-dead:   [dynamic]int
-asleep: [dynamic]int
-polls:  [dynamic]linux.Poll_Fd
+Active_Index :: distinct int
+
+epoll: linux.Fd
 
 // TODO: ARM support
-//   Requires modifications in all the @arch places
 
 // Linux x86_64 call convention
 // %rdi, %rsi, %rdx, %rcx, %r8, and %r9
 
 ensure_init :: #force_inline proc() {
     if len(contexts) == 0 {
-        append(&contexts, Context{})
+        append(&contexts, Context{ active_id = 0 })
         append(&active, 0)
+
+        epoll_create_err: linux.Errno
+        epoll, epoll_create_err = linux.epoll_create1({})
+        assert(epoll_create_err == nil)
     }
 }
 
@@ -60,12 +68,16 @@ __yield :: proc(rsp: rawptr) {
 __sleep_read :: proc(fd: linux.Fd, rsp: rawptr) {
     ensure_init()
 
-    contexts[active[current]].rsp = rsp
+    self := active[current]
+    contexts[self].rsp = rsp
 
-    append(&asleep, active[current])
     unordered_remove(&active, current)
 
-    append(&polls, linux.Poll_Fd{ fd=fd, events={ .RDNORM } })
+    fd_copy, dup_err := linux.dup(fd)
+    assert(dup_err == nil)
+
+    ctl_err := linux.epoll_ctl(epoll, .ADD, fd_copy, &{ events={ .RDNORM, .ONESHOT }, data={ u64=u64(self) } })
+    assert(ctl_err == nil, fmt.tprint(ctl_err))
 
     switch_context()
 }
@@ -74,12 +86,16 @@ __sleep_read :: proc(fd: linux.Fd, rsp: rawptr) {
 __sleep_write :: proc(fd: linux.Fd, rsp: rawptr) {
     ensure_init()
 
-    contexts[active[current]].rsp = rsp
+    self := active[current]
+    contexts[self].rsp = rsp
 
-    append(&asleep, active[current])
     unordered_remove(&active, current)
     
-    append(&polls, linux.Poll_Fd{ fd=fd, events={ .WRNORM } })
+    fd_copy, dup_err := linux.dup(fd)
+    assert(dup_err == nil)
+    
+    ctl_err := linux.epoll_ctl(epoll, .ADD, fd_copy, &{ events={ .WRNORM, .ONESHOT }, data={ u64=u64(self) } })
+    assert(ctl_err == nil, fmt.tprint(ctl_err))
 
     switch_context()
 }
@@ -95,33 +111,32 @@ __finish_current :: proc() {
 }
 
 switch_context :: proc() {
-    if len(polls) > 0 {
-        timeout: c.int =  -1 if (len(active) == 0) else 0
+    timeout: c.int =  -1 if (len(active) == 0) else 0
 
-        _, poll_err := linux.poll(polls[:], timeout)
-        assert(poll_err == .NONE)
+    events: [128]linux.EPoll_Event
 
-        for i := 0; i < len(polls); {
-            if polls[i].revents > {} {
-                id := asleep[i]
-                unordered_remove(&polls, i)
-                unordered_remove(&asleep, i)
-                append(&active, id)
-            } else {
-                i += 1
-            }
-        }
+    event_count, epoll_wait_err := linux.epoll_wait(epoll, raw_data(events[:]), len(events), timeout)
+    assert(epoll_wait_err == .NONE)
+
+    for event in events[:event_count] {
+        ctx_id := int(event.data.u64)
+        append(&active, ctx_id)
+        contexts[ctx_id].active_id = Active_Index(len(active)-1)
     }
     assert(len(active) > 0, "deadlock")
-    current %= len(active)
+
+    current %= len(active) // in case we came here from __yield()
 
     restore_context(contexts[active[current]].rsp)
 }
 
-go :: proc(f: proc(rawptr), arg: rawptr) {
+@(export)
+__go :: proc(f: proc(rawptr), arg: rawptr, rsp: rawptr) {
     ensure_init()
 
-    id: int
+    contexts[active[current]].rsp = rsp
+
+    id := 0
     if len(dead) > 0 {
         id = pop(&dead)
     } else {
@@ -132,24 +147,18 @@ go :: proc(f: proc(rawptr), arg: rawptr) {
         contexts[id].stack_base, mmap_err = linux.mmap(0, STACK_CAPACITY, {.WRITE, .READ}, {.PRIVATE, .STACK, .ANONYMOUS, .GROWSDOWN})
         assert(mmap_err == .NONE)
     }
+    append(&active, id)
+    current = len(active)-1
 
     rsp := ([^]rawptr)(contexts[id].stack_base)[STACK_CAPACITY/size_of(rawptr): ]
 
-    contexts[id].rsp = setup_context(rsp, f, arg)
-
-    append(&active, id)
+    start(f, arg, rsp)
 }
 
 wake_up :: proc(id: int) {
-    // @speed coroutine_wake_up is linear
-    for sleeper in asleep {
-        if sleeper == id {
-            unordered_remove(&asleep, id)
-            unordered_remove(&polls, id)
-            append(&active, id)
-            return
-        }
-    }
+    assert(len(contexts) > 0)
+    append(&active, id)
+    contexts[id].active_id = Active_Index(id)
 }
 
 id :: proc() -> int {

@@ -42,17 +42,23 @@ main :: proc() {
             fmt.printfln("[%v] Client connected!", coroutine.id())
 
             client := net.TCP_Socket(uintptr(arg))
-            defer net.close(client)
+            defer {
+                net.shutdown(client, .Both)
+                net.close(client)
+            }
 
             buf: [4096]byte
 
-            OUTER: for {
+            CLIENT: for {
                 coroutine.sleep_read(linux.Fd(client))
                 n, recv_err := net.recv_tcp(client, buf[:])
-                assert(recv_err == nil)
+                if recv_err != nil {
+                    fmt.printfln("[%v] Error when receiving from client: %v", coroutine.id(), recv_err)
+                    break CLIENT
+                }
                 
-                if (n == 0) {
-                    break OUTER
+                if (n == 0) { // the client closed the connection
+                    break CLIENT
                 }
 
                 chunk: = buf[:n]
@@ -75,7 +81,7 @@ main :: proc() {
                     m, send_err := net.send_tcp(client, chunk)
                     assert(send_err == nil)
                     if m == 0 {
-                        break OUTER
+                        break CLIENT
                     }
                     chunk = chunk[m:]
                 }
