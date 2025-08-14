@@ -28,7 +28,7 @@ main :: proc() {
 
     fmt.printfln("[%v] Server listening to %v:%v", coroutine.id(), HOST, PORT)
     SERVER: for {
-        coroutine.sleep_read(linux.Fd(server))
+        coroutine.wait_until(linux.Fd(server), .Readable)
         if quit {
             break SERVER
         }
@@ -50,7 +50,7 @@ main :: proc() {
             buf: [4096]byte
 
             CLIENT: for {
-                coroutine.sleep_read(linux.Fd(client))
+                coroutine.wait_until(linux.Fd(client), .Readable)
                 n, recv_err := net.recv_tcp(client, buf[:])
                 if recv_err != nil {
                     fmt.printfln("[%v] Error when receiving from client: %v", coroutine.id(), recv_err)
@@ -70,14 +70,14 @@ main :: proc() {
                     case "shutdown":
                         fmt.printfln("[%v] Client requested to shutdown the server", coroutine.id())
                         quit = true
-                        coroutine.wake_up(server_id)
+                        coroutine.signal_other(server_id)
                         return
                 }
 
                 fmt.printfln("[%v] Client sent %v bytes", coroutine.id(), len(chunk))
 
                 for len(chunk) > 0 {
-                    coroutine.sleep_write(linux.Fd(client))
+                    coroutine.wait_until(linux.Fd(client), .Writeable)
                     m, send_err := net.send_tcp(client, chunk)
                     assert(send_err == nil)
                     if m == 0 {

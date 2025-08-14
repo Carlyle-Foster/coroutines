@@ -18,6 +18,6 @@ main :: proc() {
     }, nil)
     coroutine.go(counter, rawptr(uintptr(5)))
     coroutine.go(counter, rawptr(uintptr(10)))
-    coroutine.wait()
+    coroutine.wait_for_others()
     fmt.printfln("[%v] all done!", coroutine.id())
 }

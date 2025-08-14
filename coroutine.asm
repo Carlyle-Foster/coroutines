@@ -1,5 +1,10 @@
 ; this file uses a NASM/intel dialect
 
+; TODO: ARM support
+
+; Linux x86_64 call convention
+; %rdi, %rsi, %rdx, %rcx, %r8, and %r9
+
 bits 64
 
 section .note.GNU-stack
@@ -8,19 +13,16 @@ section .text
 
 extern __finish_current
 
+global coroutine_start
+global coroutine_restore_context
+
 extern __go
 extern __yield
-extern __sleep_read
-extern __sleep_write
-
-global coroutine_yield
-global coroutine_sleep_read
-global coroutine_sleep_write
+extern __wait_until
 
 global coroutine_go
-global coroutine_start
-global coroutine_setup_context
-global coroutine_restore_context
+global coroutine_yield
+global coroutine_wait_until
 
 coroutine_go:
     mov rcx, rdx
@@ -32,15 +34,10 @@ coroutine_yield:
     mov rdi, rsp
     jmp [rel __yield wrt ..got]
 
-coroutine_sleep_read:
-    mov rdx, rsi
-    mov rsi, rsp
-    jmp [rel __sleep_read wrt ..got]
-
-coroutine_sleep_write:
-    mov rdx, rsi
-    mov rsi, rsp
-    jmp [rel __sleep_write wrt ..got]
+coroutine_wait_until:
+    mov rcx, rdx
+    mov rdx, rsp
+    jmp [rel __wait_until wrt ..got]
 
 coroutine_start:
     mov rsp, rdx ; switch stacks
