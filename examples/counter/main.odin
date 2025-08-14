@@ -14,9 +14,10 @@ counter :: proc(arg: rawptr) {
 
 main :: proc() {
     coroutine.go(proc(arg: rawptr) {
-        fmt.printfln("[%v] Hello from odin Lambda", coroutine.id())
+        fmt.printfln("[%v] Hello from odin Lambda (a non-capturing lambda, mind you)", coroutine.id())
     }, nil)
     coroutine.go(counter, rawptr(uintptr(5)))
     coroutine.go(counter, rawptr(uintptr(10)))
-    for coroutine.alive() > 1 do coroutine.yield()
+    coroutine.wait()
+    fmt.printfln("[%v] all done!", coroutine.id())
 }

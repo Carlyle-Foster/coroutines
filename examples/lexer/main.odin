@@ -49,10 +49,9 @@ main :: proc() {
     coroutine.go(lex, &os2.args[1])
 
     // Consume those tokens
-    loop: for coroutine.alive() > 1 {
+    PARSE: for {
         // Yield control to the lexer.
         // It will lex and yield control back to here.
-        coroutine.yield()
         switch v in token_value {
         case tk_int:
             fmt.printfln("TK_INT : %v", v)
@@ -60,7 +59,8 @@ main :: proc() {
             fmt.printfln("TK_OP  : %v", v)
         case nil:
             fmt.printfln("Done!")
-            break loop
+            break PARSE
         }
+        coroutine.yield()
     }
 }

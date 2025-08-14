@@ -155,16 +155,24 @@ __go :: proc(f: proc(rawptr), arg: rawptr, rsp: rawptr) {
     start(f, arg, rsp)
 }
 
-wake_up :: proc(id: int) {
-    assert(len(contexts) > 0)
-    append(&active, id)
-    contexts[id].active_id = Active_Index(id)
-}
-
 id :: proc() -> int {
     return active[current] if len(active) > 0 else 0
 }
 
-alive :: proc() -> int {
-    return len(active)
+wait :: proc() {
+    @(static) waiting_coroutines := 0
+
+    waiting_coroutines += 1
+    defer waiting_coroutines -= 1
+    assert(waiting_coroutines < len(active), "everyone's waiting")
+
+    for len(active) > 1 {
+        yield()
+    }
+}
+
+wake_up :: proc(id: int) {
+    assert(len(contexts) > 0)
+    append(&active, id)
+    contexts[id].active_id = Active_Index(id)
 }
