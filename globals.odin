@@ -12,3 +12,6 @@ current: int
 active: [dynamic]int
 
 epoll: linux.Fd
+
+g_waiting_coroutines := 0
+g_reset_in_progress := false

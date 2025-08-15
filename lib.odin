@@ -31,17 +31,22 @@ foreign assembly {
 }
 
 /*
-Waits for all other coroutines to finish, panics on deadlock
+Waits for all other coroutines to finish, except for other coroutines who are doing likewise
 */
 wait_for_others :: proc() {
-    @(static) waiting_coroutines := 0
-
-    waiting_coroutines += 1
-    defer waiting_coroutines -= 1
-    assert(waiting_coroutines < len(active), "everyone's waiting")
+    g_waiting_coroutines += 1
+    defer g_waiting_coroutines -= 1
 
     for len(active) > 1 {
         yield()
+
+        assert(g_waiting_coroutines <= len(active))
+
+        waiting := g_waiting_coroutines + 1 if g_reset_in_progress else g_waiting_coroutines
+
+        if waiting >= len(active) {
+            return // avoids deadlocks
+        }
     }
 }
 
@@ -65,4 +70,30 @@ Returns:
 */
 id :: proc() -> int {
     return active[current] if len(active) > 0 else 0
+}
+
+/*
+waits for all other coroutines to finish and resets the runtime, is reentrant
+*/
+reset_runtime :: proc() {
+    if g_reset_in_progress {
+         return
+    }
+    g_reset_in_progress = true
+    defer g_reset_in_progress = false
+
+    for len(active) > 1 {
+        yield()
+    }
+
+    for ctx in contexts {
+        errno := linux.munmap(ctx.stack_base, STACK_CAPACITY)
+        assert(errno == nil)
+    }
+    delete(contexts)
+    delete(active)
+    delete(dead)
+
+    errno := linux.close(epoll)
+    assert(errno == nil)
 }
