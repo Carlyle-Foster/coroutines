@@ -7,7 +7,7 @@ package overflow
 
 import "core:fmt"
 
-import co "../../../coroutines"
+import co "../../../coro"
 
 // the guard page allocated by `allocate_stack()` should catch this stack overflow
 // the program will then crash, preventing memory corruption

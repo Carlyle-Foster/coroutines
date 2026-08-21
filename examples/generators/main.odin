@@ -2,7 +2,7 @@ package gens
 
 import "core:fmt"
 
-import co "../../../coroutines"
+import co "../../../coro"
 
 enerates :: co.Gen
 

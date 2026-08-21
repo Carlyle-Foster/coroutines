@@ -4,8 +4,8 @@ package ex_rt
 
 import "base:intrinsics"
 
-import co   "../../../coroutines"
-import prim "../../../coroutines/primitives"
+import co   "../../../coro"
+import prim "../../../coro/primitives"
 
 STACK_CAPACITY  :: 64 * 1024
 
