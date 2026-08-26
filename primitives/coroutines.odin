@@ -2,8 +2,8 @@ package coroutines
 
 import "base:runtime"
 
+import "core:mem"
 import "core:mem/virtual"
-import "core:os/old"
 
 Coroutine :: struct {
     rsp: rawptr,
@@ -16,7 +16,7 @@ Caller :: distinct ^Coroutine
 Stack :: distinct []byte
 
 allocate_stack :: proc(min_size: int) -> (Stack, runtime.Allocator_Error) #optional_allocator_error {
-    page_size := old.get_page_size()
+    page_size := mem.PAGE_SIZE
     size      := runtime.align_forward(min_size, page_size) + page_size
 
     stack, err := virtual.reserve_and_commit(uint(size))
@@ -32,7 +32,7 @@ allocate_stack :: proc(min_size: int) -> (Stack, runtime.Allocator_Error) #optio
 }
 
 free_stack :: proc(stack: Stack) {
-    page_size := old.get_page_size()
+    page_size := mem.PAGE_SIZE
 
     base := rawptr( uintptr(raw_data(stack)) - uintptr(page_size) )
 
